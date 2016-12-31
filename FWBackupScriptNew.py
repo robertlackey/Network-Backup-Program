@@ -29,7 +29,7 @@ TESTDEV0DIR = os.path.join(CONFIGDIR, TESTDEV0)
 TESTDEV1DIR = os.path.join(CONFIGDIR, TESTDEV1)
 ###############################
 username = "***ENTER USERNAME HERE***"
-password = '***ENTER USERNAME HERE***'
+password = '***ENTER PASSWORD HERE***'
 ###############################
 hosts = [
 ##*** CISCO DEVICE IPs ***##
