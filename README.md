@@ -1,1 +1,1 @@
-# Object-oriented program written in Python to backup Cisco IOS and ASA networking devices.
+# This is a Python program to backup Cisco IOS and ASA devices.
