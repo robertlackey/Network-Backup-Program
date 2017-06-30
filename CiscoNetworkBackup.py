@@ -19,7 +19,7 @@ TIMESTAMP = '%s %s %s' % (abbrev_month.strftime('%b'), now.day, now.year)
 FULLNAME = CONFIGSTR + JULIANDATESTR + TIMESTAMP
 ###############################
 #storing the path in a variable
-#THIS IS FOR LINUX PC/SERVER AND WILL NEED TO BE MODIFIED FOR WINDOWS
+#THIS IS FOR LINUX PC/SERVER AND WILL NEED TO BE MODIFIED IF USED ON WINDOWS OS
 CONFIGDIR = str(FULLNAME)
 ###############################
 TESTDEV0 = "TESTDEV0.txt"
@@ -39,7 +39,7 @@ hosts = [
         '***ENTER 2ND IP HERE***',
         ]
 ###############################
-#***ADD, CHANGE, OR REMOVE ANY COMMANDS THAT YOU THINK ARE NECESSARY***
+#***ADD, CHANGE, OR REMOVE ANY COMMANDS THAT ARE NECESSARY FOR YOU***
 commands = [
         'en' + '\n',
         password + '\n',
