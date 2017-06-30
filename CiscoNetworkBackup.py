@@ -75,9 +75,9 @@ class ssh:
     def sendCommand(self, command):
         time.sleep(20)
         chan = self.client.invoke_shell()
+        print "sending commands"
         for command in commands:
             chan.send(command)
-        print "sending commands"
         clientbuffer = []
         while not chan.exit_status_ready():
             if chan.recv_ready():
