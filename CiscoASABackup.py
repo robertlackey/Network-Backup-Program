@@ -4,97 +4,90 @@ import datetime
 import pwd
 import grp
 import getpass
+import logging
 from paramiko import client
 from os import path
 from datetime import datetime
 from time import strftime, sleep
+from multiprocessing import Pool
 
 now = datetime.now()
 day = now.strftime("%d")
 month = now.strftime("%m")
-TIMESTAMP = '%s%s%s' % (now.year, month, day)
+TIMESTAMP = f'{now.year}{month}{day}'
 
 CONFIGPATH = os.path.abspath("/home/")
 CONFIGDIR = str(TIMESTAMP)
 
+logging.basicConfig(filename=f"{CONFIGPATH}/{CONFIGDIR}/output.log", level=logging.INFO)
+
 class ssh:
+    def __init__(self, host, username, key_filename, commands):
+        self.host = host
+        self.username = username
+        self.key_filename = key_filename
+        self.commands = commands
 
-	client = None
+    def sendCommand(self):
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(self.host, username=self.username, key_filename=self.key_filename)
+        logging.info(f"Connected to {self.host}")
+        chan = client.invoke_shell()
 
-	def create_folder():
-		if os.path.exists(CONFIGPATH+'/'+CONFIGDIR):
-			print "Path Exists Already @ " + CONFIGPATH+'/'+CONFIGDIR
-		elif not os.path.exists(CONFIGPATH+'/'+CONFIGDIR):
-			os.makedirs(CONFIGPATH+'/'+CONFIGDIR)
-			print CONFIGPATH+'/'+CONFIGDIR
+        for command in self.commands:
+            logging.info(f"Sending command: {command}")
+            chan.send(command)
 
-	def __init__(self, hosts, username, password, commands):
-		self.hosts = hosts
-		self.username = username
-		self.password = password
-		self.client = paramiko.SSHClient()
-		self.commands = commands
+        clientbuffer = []
+        try:
+            while not chan.exit_status_ready():
+                if chan.recv_ready():
+                    data = chan.recv(10000)
+                    while data:
+                        clientbuffer.append(data)
+                        data = chan.recv(4096)
+            clientoutput = ''.join(clientbuffer)
+        except Exception as e:
+            logging.error(f"Error: {e}")
+        finally:
+            client.close()
 
-	def sendCommand(self):
-		port=22
-		for host in self.hosts:
-			#time.sleep(10)
-			self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-			self.client.connect(host, port, self.username, self.password, look_for_keys=False)
-			print "connection to "+ host
-			chan = self.client.invoke_shell()
+        with open(os.path.join(CONFIGPATH, CONFIGDIR, f"{self.host.upper()}.txt"), 'w') as f:
+            f.write(clientoutput)
 
-			for command in self.commands:
-				print "sending command " + command
-				chan.send(command)
-			clientbuffer = []
-			try:
-				while not chan.exit_status_ready():
-					if chan.recv_ready():
-						data = chan.recv(10000)
-						while data:
-							clientbuffer.append(data)
-							data = chan.recv(4096)
-				self.clientoutput = ''.join(clientbuffer)
-			except Exception:
-				raise
-			self.client.close()
-			#storing the output in a text file
-			devdir = os.path.join(CONFIGPATH+'/'+CONFIGDIR, host.upper()+'.txt')
-			if (path.isfile(devdir)):
-				pass
-			elif not(path.isfile(devdir)):
-				f = open(os.path.join(CONFIGPATH+'/'+CONFIGDIR, host.upper()+'.txt'), 'w')
-				with open(os.path.join(CONFIGPATH+'/'+CONFIGDIR, host.upper()+'.txt'), 'w') as f:
-					f.write(self.clientoutput)
-					f.close
-
-	create_folder()
+def create_folder():
+    if not os.path.exists(os.path.join(CONFIGPATH, CONFIGDIR)):
+        os.makedirs(os.path.join(CONFIGPATH, CONFIGDIR))
 
 def main():
-	username = raw_input("Enter Username: ")
-	password = getpass.getpass("Enter your password: ")
+    username = input("Enter Username: ")
+    key_filename = input("Enter path to SSH private key: ")
+    password = getpass.getpass("Enter passphrase for SSH private key: ")
 
-	hosts = [
-		#dev0
-		'dev0',
-		#dev1
-		'dev1'
-	]
+    hosts = [
+        #dev0
+        'dev0',
+        #dev1
+        'dev1'
+    ]
 
-	commands = [
-		'en', + '\n',
-		password + '\n',
-		'terminal pager 0' + '\n',
-		'sh clock' + '\n',
-		'sh ver' + '\n',
-		'sh run access-group' + '\n',
-		'sh run' + '\n', 
-		'exit' + '\n'
-	]
-        
-	DEV = ssh(hosts, username, password, commands)
-	DEV.sendCommand()
+    commands = [
+        'en\n',
+        'terminal pager 0\n',
+        'sh clock\n',
+        'sh ver\n',
+        'sh run access-group\n',
+        'sh run\n', 
+        'exit\n'
+    ]
+
+    create_folder()
+    pool = Pool(processes=len(hosts))
+    ssh_instances = [ssh(host, username, key_filename, commands) for host in hosts]
+    pool.map(lambda x: x.sendCommand(), ssh_instances)
+    pool.close()
+    pool.join()
 
 if __name__ == '__main__':
-	main()
+    main()
