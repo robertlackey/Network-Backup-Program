@@ -1,93 +1,85 @@
-import os
-import paramiko
-import datetime
-import pwd
-import grp
-import getpass
 import logging
-from paramiko import client
-from os import path
-from datetime import datetime
-from time import strftime, sleep
-from multiprocessing import Pool
+import pathlib
+import asyncio
+import paramiko
+import os
 
-now = datetime.now()
-day = now.strftime("%d")
-month = now.strftime("%m")
-TIMESTAMP = f'{now.year}{month}{day}'
+# Use environment variables to get sensitive information
+username = os.environ.get('SSH_USERNAME')
+private_key_passphrase = os.environ.get('SSH_PRIVATE_KEY_PASSPHRASE')
 
-CONFIGPATH = os.path.abspath("/home/")
-CONFIGDIR = str(TIMESTAMP)
-
-logging.basicConfig(filename=f"{CONFIGPATH}/{CONFIGDIR}/output.log", level=logging.INFO)
-
-class ssh:
-    def __init__(self, host, username, key_filename, commands):
+class SSHClient:
+    def __init__(self, host, username, private_key_path, commands):
         self.host = host
         self.username = username
-        self.key_filename = key_filename
+        self.private_key_path = private_key_path
         self.commands = commands
+        self.client = paramiko.SSHClient()
+        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    def sendCommand(self):
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(self.host, username=self.username, key_filename=self.key_filename)
-        logging.info(f"Connected to {self.host}")
-        chan = client.invoke_shell()
+    async def connect(self):
+        await asyncio.sleep(0)
+        # Use password authentication instead of private key authentication
+        self.client.connect(self.host, username=self.username, password=private_key_passphrase)
 
-        for command in self.commands:
-            logging.info(f"Sending command: {command}")
-            chan.send(command)
+    async def send_command(self):
+        await self.connect()
+        async with self.client.invoke_shell() as shell:
+            for command in self.commands:
+                shell.send(command)
+                await asyncio.sleep(0.1)
+            output = ''
+            while not shell.exit_status_ready():
+                if shell.recv_ready():
+                    output += shell.recv(4096).decode()
+                    await asyncio.sleep(0.1)
+            output += shell.recv(4096).decode()
+            await asyncio.sleep(0.1)
+        self.client.close()
+        return output
 
-        clientbuffer = []
-        try:
-            while not chan.exit_status_ready():
-                if chan.recv_ready():
-                    data = chan.recv(10000)
-                    while data:
-                        clientbuffer.append(data)
-                        data = chan.recv(4096)
-            clientoutput = ''.join(clientbuffer)
-        except Exception as e:
-            logging.error(f"Error: {e}")
-        finally:
-            client.close()
 
-        with open(os.path.join(CONFIGPATH, CONFIGDIR, f"{self.host.upper()}.txt"), 'w') as f:
-            f.write(clientoutput)
-
-def create_folder():
-    if not os.path.exists(os.path.join(CONFIGPATH, CONFIGDIR)):
-        os.makedirs(os.path.join(CONFIGPATH, CONFIGDIR))
-
-def main():
-    username = input("Enter Username: ")
-    key_filename = input("Enter path to SSH private key: ")
-    password = getpass.getpass("Enter passphrase for SSH private key: ")
-
+async def main():
     hosts = [
-        #dev0
         'dev0',
-        #dev1
         'dev1'
     ]
 
-    commands = [
-        'en\n',
-        'terminal pager 0\n',
-        'sh clock\n',
-        'sh ver\n',
-        'sh run access-group\n',
-        'sh run\n', 
-        'exit\n'
-    ]
+    # Use a configuration file or a database to store hostnames and commands
+    with open('config.txt', 'r') as f:
+        config = f.readlines()
 
-    create_folder()
-    pool = Pool(processes=len(hosts))
-    ssh_instances = [ssh(host, username, key_filename, commands) for host in hosts]
-    pool.map(lambda x: x.sendCommand(), ssh_instances)
-    pool.close()
-    pool.join()
+    commands = []
+    for line in config:
+        if line.startswith('#'):
+            continue
+        commands.append(line.strip())
+
+    tasks = []
+    for host in hosts:
+        ssh_client = SSHClient(host, username, private_key_path, commands)
+        tasks.append(asyncio.create_task(ssh_client.send_command()))
+
+    outputs = await asyncio.gather(*tasks)
+
+    config_dir_path = pathlib.Path.home() / 'output' / pathlib.Path(f"{datetime.datetime.now().strftime('%Y%m%d')}")
+    config_dir_path.mkdir(parents=True, exist_ok=True)
+
+    for host, output in zip(hosts, outputs):
+        with open(config_dir_path / f"{host.upper()}.txt", 'w') as f:
+            f.write(output)
+            logging.info(f"Configuration for {host} written to {config_dir_path}/{host.upper()}.txt")
+
 
 if __name__ == '__main__':
-    main()
+    logging.basicConfig(filename=f"{pathlib.Path.home()}/output.log", level=logging.INFO)
+
+    # Use SSH agent forwarding
+    ssh_agent = paramiko.Agent()
+    private_keys = ssh_agent.get_keys()
+    if len(private_keys) > 0:
+        private_key_path = private_keys[0].filename
+    else:
+        raise Exception("No private key found in SSH agent")
+
+    asyncio.run(main())
